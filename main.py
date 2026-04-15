@@ -138,12 +138,83 @@ def fetch_remotive(keywords=None):
         print(f"Remotive error: {e}")
         return []
 
+def fetch_hn_whos_hiring():
+    """从 Hacker News 'Who is Hiring' 月帖获取职位"""
+    try:
+        # 找最新的月度帖
+        for month in ["April", "March", "February", "January"]:
+            r = requests.get(
+                f"https://hn.algolia.com/api/v1/search?query=Ask+HN+Who+is+hiring+({month}+2026)&tags=story",
+                timeout=15, headers={"User-Agent": "DevAlert/1.0"})
+            hits = r.json().get("hits", [])
+            story_id = None
+            for h in hits:
+                title = (h.get("title") or "").lower()
+                if "who is hiring" in title and "2026" in title:
+                    story_id = h["objectID"]
+                    break
+            if not story_id:
+                continue
+
+            # 获取评论
+            r2 = requests.get(f"https://hn.algolia.com/api/v1/items/{story_id}",
+                              timeout=20, headers={"User-Agent": "DevAlert/1.0"})
+            data = r2.json()
+            children = data.get("children", [])
+
+            jobs = []
+            for c in children[:200]:  # 最多200条评论
+                text = c.get("text") or ""
+                if not text or len(text) < 30:
+                    continue
+                # 解析HTML标签
+                import re
+                clean = re.sub(r'<[^>]+>', ' ', text)
+                clean = re.sub(r'&#x2F;', '/', clean)
+                clean = re.sub(r'&amp;', '&', clean)
+                clean = re.sub(r'\s+', ' ', clean).strip()
+
+                # 提取标题行（第一行通常包含公司名和职位）
+                first_line = clean.split('.')[0].split('|')[0].strip()[:120]
+                if not first_line or len(first_line) < 5:
+                    continue
+
+                # 提取链接
+                urls = re.findall(r'https?://[^\s<"]+', text)
+                job_url = urls[0] if urls else f"https://news.ycombinator.com/item?id={c.get('id','')}"
+
+                # 提取远程标记
+                is_remote = any(kw in clean.lower() for kw in ["remote", "anywhere", "work from home", "distributed"])
+
+                job = {
+                    "id": f"hn_{c.get('id', '')}",
+                    "title": first_line,
+                    "company": first_line.split('(')[0].strip()[:50] if '(' in first_line else first_line[:50],
+                    "url": job_url,
+                    "location": "Remote" if is_remote else "",
+                    "tags": [],
+                    "salary": "",
+                    "date": c.get("created_at", ""),
+                    "source": "HackerNews",
+                    "type": "",
+                    "description": clean[:500],
+                }
+                if is_remote or any(kw in clean.lower() for kw in ["engineer", "developer", "designer", "manager", "data", "product", "devops", "sre"]):
+                    jobs.append(job)
+
+            return jobs
+
+        return []
+    except Exception as e:
+        print(f"HN error: {e}")
+        return []
+
 def fetch_all_jobs():
     """聚合所有数据源"""
     jobs = []
     seen_urls = set()
 
-    for fetcher in [fetch_remoteok, fetch_remotive]:
+    for fetcher in [fetch_remoteok, fetch_remotive, fetch_hn_whos_hiring]:
         try:
             fetched = fetcher()
             for job in fetched:

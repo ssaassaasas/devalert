@@ -9,5 +9,12 @@
     ],
     "location_pref": "",
     "created": 1776286309.523806
+  },
+  "da-preview": {
+    "email": "preview@devalert.io",
+    "tier": "pro",
+    "keywords": [],
+    "location_pref": "",
+    "created": 0
   }
 }
